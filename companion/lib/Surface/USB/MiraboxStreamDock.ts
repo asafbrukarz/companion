@@ -48,6 +48,7 @@ export class SurfaceUSBMiraboxStreamDock extends EventEmitter<SurfacePanelEvents
 		this.config = {
 			brightness: 100,
 			rotation: 0,
+			deviceTypeOverride: 0,
 		}
 
 		this.#streamDock = streamDock
@@ -60,6 +61,23 @@ export class SurfaceUSBMiraboxStreamDock extends EventEmitter<SurfacePanelEvents
 			RotationConfigField,
 			...LockConfigFields,
 		]
+
+		configFields.push({
+			id: 'deviceTypeOverride',
+			type: 'dropdown',
+			label: 'Device Type',
+			default: 0,
+			choices: [
+				{
+					id: 0,
+					label: 'Use detected default',
+				},
+				...Object.entries(StreamDock.models).map(([modelId, model]) => ({
+					id: modelId,
+					label: `${model.productName} (${modelId})`,
+				})),
+			],
+		})
 
 		// if (streamDock.productName.includes('N4')) {
 		// 	configFields.push({
@@ -163,7 +181,6 @@ export class SurfaceUSBMiraboxStreamDock extends EventEmitter<SurfacePanelEvents
 
 	async #init() {
 		this.info.deviceId = `streamdock:${this.#streamDock.serialNumber}`
-
 		// Make sure the first clear happens properly
 		await this.#streamDock.clearPanel()
 	}
@@ -219,6 +236,17 @@ export class SurfaceUSBMiraboxStreamDock extends EventEmitter<SurfacePanelEvents
 				this.logger.debug(`Set brightness failed: ${e}`)
 			})
 		}
+
+		if (
+			(force || this.config.deviceTypeOverride != config.deviceTypeOverride) &&
+			config.deviceTypeOverride !== undefined
+		) {
+			this.#streamDock.setDeviceTypeOverride(config.deviceTypeOverride)
+		} else if (config.deviceTypeOverride == undefined) {
+			//Set default to auto-detect
+			config.deviceTypeOverride = this.config.deviceTypeOverride
+		}
+
 		// if ((force || this.config.layout != config.layout) && config.layout !== undefined) {
 		// 	//this.#streamDock.setLayout(config.layout)
 		// }
@@ -1993,24 +2021,7 @@ class StreamDock extends EventEmitter {
 			this.emit('error', error)
 		})
 
-		if (this.info.productId === 0x1005 || this.info.productId === 0x1006) {
-			// modelType = '293V3'
-			this.model = StreamDock.models['293V3']
-		} else if (this.info.productId === 0x1001 || this.info.productId === 0x1007) {
-			// modelType = 'N4'
-			this.model = StreamDock.models['N4-1234']
-		} else if (this.info.productId === 0x1003) {
-			// modelType = 'N3'
-			this.model = StreamDock.models['293N3']
-		} else if (this.info.productId === 0x1014) {
-			this.model = StreamDock.models['HSV 293S']
-		} else if (this.info.productId === 0x6670) {
-			this.model = StreamDock.models['HSV 293S-2']
-			this.packetSize = 512
-		} else {
-			// this.modelType = 'Unknown'
-			this.emit('remove')
-		}
+		this.detectDeviceModel()
 
 		this.device.on('data', (data) => {
 			// console.log(`received data ${Array.from(data).slice(0,16).map(d => (d as number).toString(16))}`)
@@ -2132,6 +2143,40 @@ class StreamDock extends EventEmitter {
 			if (newmodel !== undefined) {
 				this.model = newmodel
 			}
+		}
+	}
+
+	/**
+	 * Overrides the detected device type to one provided
+	 * @param deviceType
+	 */
+	setDeviceTypeOverride(deviceType: string) {
+		const newmodel = (StreamDock.models as any)[deviceType]
+		if (deviceType == '0') {
+			this.detectDeviceModel()
+		} else if (newmodel !== undefined) {
+			this.model = newmodel
+		}
+	}
+
+	private detectDeviceModel() {
+		if (this.info.productId === 0x1005 || this.info.productId === 0x1006) {
+			// modelType = '293V3'
+			this.model = StreamDock.models['293V3']
+		} else if (this.info.productId === 0x1001 || this.info.productId === 0x1007) {
+			// modelType = 'N4'
+			this.model = StreamDock.models['N4-1234']
+		} else if (this.info.productId === 0x1003) {
+			// modelType = 'N3'
+			this.model = StreamDock.models['293N3']
+		} else if (this.info.productId === 0x1014) {
+			this.model = StreamDock.models['HSV 293S']
+		} else if (this.info.productId === 0x6670) {
+			this.model = StreamDock.models['HSV 293S-2']
+			this.packetSize = 512
+		} else {
+			// this.modelType = 'Unknown'
+			this.emit('remove')
 		}
 	}
 
